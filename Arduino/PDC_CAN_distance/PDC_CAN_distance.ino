@@ -13,6 +13,13 @@ const unsigned int BAUD_RATE = 115200;
 #define ENCODER 3            //light detecting pin, connect D0 with 3
 #define CIRCUMFERENCE 0.214  //enter in meter
 #define PERIOD 0.1
+#define CAN0_INT 2
+
+long unsigned int rxId;
+unsigned char len = 0;
+unsigned char rxBuf[8];
+char msgString[128];
+volatile bool gearR = false;
 
 volatile unsigned int counter = 0;
 double rpm;
@@ -45,6 +52,7 @@ void setup() {
   };
 
   CAN0.setMode(MCP_NORMAL);
+  pinMode(CAN0_INT, INPUT);
 
   //set pin status
   pinMode(TRIG_PIN, OUTPUT);
@@ -60,6 +68,37 @@ void setup() {
 }
 
 void loop() {
+  if (!digitalRead(CAN0_INT)) {
+    CAN0.readMsgBuf(&rxId, &len, rxBuf);  // Read data: len = data length, buf = data byte(s)
+
+    if ((rxId & 0x80000000) == 0x80000000)  // Determine if ID is standard (11 bits) or extended (29 bits)
+      sprintf(msgString, "Extended ID: 0x%.8lX  DLC: %1d  Data:", (rxId & 0x1FFFFFFF), len);
+    else
+      sprintf(msgString, "Standard ID: 0x%.3lX       DLC: %1d  Data:", rxId, len);
+
+    Serial.print(msgString);
+
+    if ((rxId & 0x40000000) == 0x40000000) {  // Determine if message is a remote request frame.
+      sprintf(msgString, " REMOTE REQUEST FRAME");
+      Serial.print(msgString);
+    } else {
+      if (rxId == 0x123) {
+        for (byte i = 0; i < len; i++) {
+          sprintf(msgString, " 0x%.2X", rxBuf[i]);
+          Serial.print(msgString);
+        }
+
+        if (rxBuf[7] == 1) {
+          gearR = true;
+        } else {
+          gearR = false;
+        }
+      }
+    }
+
+    Serial.println();
+  }
+
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
   digitalWrite(TRIG_PIN, HIGH);
@@ -75,29 +114,30 @@ void loop() {
   Serial.println(distance);
   static uint32_t previousMillis;
 
-  if (distance <= 15 && distance > 7) {
-    if (buzzer_cnt % 4 < 2) {
+  if (gearR == true) {
+    if (distance <= 15 && distance > 7) {
+      if (buzzer_cnt % 4 < 2) {
+        tone(buzzer, 1000);
+        delay(100);
+      } else {
+        noTone(buzzer);
+        delay(100);
+      }
+    } else if (distance <= 7 && distance > 4) {
+      if (buzzer_cnt % 2 == 0) {
+        tone(buzzer, 1000);
+        delay(100);
+      } else {
+        noTone(buzzer);
+        delay(100);
+      }
+    } else if (distance <= 4) {
       tone(buzzer, 1000);
       delay(100);
     } else {
       noTone(buzzer);
       delay(100);
     }
-  } else if (distance <= 7 && distance > 4) {
-    if (buzzer_cnt % 2 == 0) {
-      tone(buzzer, 1000);
-      delay(100);
-    } else {
-      noTone(buzzer);
-      delay(100);
-    }
-  } else if (distance <= 4) {
-      tone(buzzer, 1000);
-      delay(100);
-  }
-  else {
-    noTone(buzzer);
-    delay(100);
   }
 
   data.distance_cm = distance;
@@ -130,5 +170,5 @@ void loop() {
     }
   }
 
-  buzzer_cnt ++;
+  buzzer_cnt++;
 }
