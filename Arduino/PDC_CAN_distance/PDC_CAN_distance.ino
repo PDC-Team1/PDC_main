@@ -33,7 +33,7 @@ void count() {
 union DataUnion {
   struct {
     float speed_kmh;
-    int distance_cm;
+    float distance_cm;
   };
 
   byte bytes[8];
@@ -46,9 +46,9 @@ void setup() {
   Serial.begin(115200);
 
   if (CAN0.begin(MCP_ANY, CAN_500KBPS, MCP_16MHZ) == CAN_OK) {
-    Serial.println("MCP2515 Initialized Successfully!");
+    // Serial.println("MCP2515 Initialized Successfully!");
   } else {
-    Serial.println("Error Initializing MCP2515...");
+    // Serial.println("Error Initializing MCP2515...");
   };
 
   CAN0.setMode(MCP_NORMAL);
@@ -68,6 +68,8 @@ void setup() {
 }
 
 void loop() {
+  static uint32_t previousMillis;
+
   if (!digitalRead(CAN0_INT)) {
     CAN0.readMsgBuf(&rxId, &len, rxBuf);  // Read data: len = data length, buf = data byte(s)
 
@@ -92,6 +94,8 @@ void loop() {
           gearR = true;
         } else {
           gearR = false;
+          noTone(buzzer);
+          // delay(100);
         }
       }
     }
@@ -106,13 +110,19 @@ void loop() {
   digitalWrite(TRIG_PIN, LOW);
 
   const unsigned long duration = pulseIn(ECHO_PIN, HIGH);
-  Serial.print("Duration");
-  Serial.println(duration);
+  // Serial.print("Duration");
+  // Serial.println(duration);
 
-  int distance = duration / 29 / 2;
+  if (duration == 0) {
+    // Serial.println("Warning: no pulse from sensor");
+    // noTone(buzzer);
+    // delay(100);
+  } else {
+  }
+
+  float distance = duration / 29 / 2;
   Serial.print("Distance");
   Serial.println(distance);
-  static uint32_t previousMillis;
 
   if (gearR == true) {
     if (distance <= 15 && distance > 7) {
@@ -138,14 +148,11 @@ void loop() {
       noTone(buzzer);
       delay(100);
     }
+  } else {
+    delay(100);
   }
 
   data.distance_cm = distance;
-
-  if (duration == 0) {
-    Serial.println("Warning: no pulse from sensor");
-  } else {
-  }
 
   if (millis() - previousMillis >= 1000 * PERIOD) {
     rpm = (counter / 20.0) * 60 / PERIOD;
@@ -154,17 +161,22 @@ void loop() {
     counter = 0;
     previousMillis += 1000 * PERIOD;
 
-    Serial.print("RPM: ");
-    Serial.println(data.speed_kmh);
+    // Serial.print("RPM: ");
+    // Serial.println(data.speed_kmh);
   }  // send data per 100ms
 
   static uint32_t lastCANSend = 0;
   if (millis() - lastCANSend >= 100) {
     lastCANSend = millis();
     byte sndStat = CAN0.sendMsgBuf(0x100, 0, 8, data.bytes);
+    Serial.print("Bytes: ");
+    for (int i = 0; i < 8; i++) {
+      Serial.print(data.bytes[i], HEX);
+    }
+    Serial.println();
 
     if (sndStat == CAN_OK) {
-      Serial.println("Message Sent Successfully!");
+      // Serial.println("Message Sent Successfully!");
     } else {
       Serial.println("Error Sending Message...");
     }
